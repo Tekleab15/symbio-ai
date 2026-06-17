@@ -1,0 +1,76 @@
+[
+  {
+    "condition": "Cassava Brown Streak Disease",
+    "crops": ["cassava"],
+    "category": "viral",
+    "symptom_keywords": ["yellow", "brown", "streak", "mottle", "root", "leaf"],
+    "evidence": [
+      "Leaf yellowing and brown streak-like discoloration can be compatible with cassava viral disease.",
+      "Symptoms overlap with nutrient stress, so image-only confidence is not sufficient for irreversible action."
+    ],
+    "recommended_actions": [
+      "Collect a second close-up image and a whole-plant image.",
+      "Record whether neighboring plants show spread.",
+      "Use clean planting material and mark affected plot for inspection."
+    ],
+    "possible_treatments": [
+      "Remove confirmed infected plant material only after human agronomist confirmation.",
+      "Vector control planning only after local expert approval."
+    ],
+    "unsafe_actions": [
+      "Do not order quarantine from a single uncertain image.",
+      "Do not recommend chemical treatment for unconfirmed viral disease."
+    ],
+    "quarantine_recommended": true,
+    "chemical_action_recommended": false
+  },
+  {
+    "condition": "Cochineal scale infestation",
+    "crops": ["cactus fig", "cactus", "opuntia"],
+    "category": "pest",
+    "symptom_keywords": ["white", "cotton", "cochineal", "scale", "clusters", "cactus"],
+    "evidence": [
+      "White cotton-like clusters on cactus pads are consistent with cochineal scale infestation.",
+      "Localized pest clusters can often be handled first with mechanical removal and sanitation."
+    ],
+    "recommended_actions": [
+      "Inspect nearby cactus pads for spread.",
+      "Remove heavily infested pads if confirmed.",
+      "Apply non-chemical sanitation and monitoring before pesticide escalation."
+    ],
+    "possible_treatments": [
+      "Mechanical removal and water spray where appropriate.",
+      "Pesticide escalation only if infestation is severe and locally approved."
+    ],
+    "unsafe_actions": [
+      "Avoid blanket pesticide use without severity assessment."
+    ],
+    "quarantine_recommended": false,
+    "chemical_action_recommended": false
+  },
+  {
+    "condition": "Early blight",
+    "crops": ["tomato", "potato"],
+    "category": "fungal",
+    "symptom_keywords": ["brown", "spots", "yellow", "rings", "leaf", "blight"],
+    "evidence": [
+      "Brown leaf spots with yellowing on tomato can indicate early blight but overlap with other leaf spots.",
+      "Fungal disease guidance may include fungicide, making confidence and compliance gates important."
+    ],
+    "recommended_actions": [
+      "Remove infected leaf debris only after confirmation.",
+      "Improve spacing and avoid overhead irrigation.",
+      "Collect second image from underside and whole plant."
+    ],
+    "possible_treatments": [
+      "Fungicide planning only after confirmation and local label review.",
+      "Sanitation and cultural control first."
+    ],
+    "unsafe_actions": [
+      "Do not recommend fungicide when diagnosis confidence is below safety threshold.",
+      "Do not mix chemical products without local expert approval."
+    ],
+    "quarantine_recommended": false,
+    "chemical_action_recommended": true
+  }
+]
