@@ -1,0 +1,35 @@
+[
+  {
+    "case_id": "cassava-low-confidence",
+    "title": "Cassava case: low-confidence disease signal blocked",
+    "crop": "cassava",
+    "location": "East Africa cooperative zone",
+    "symptoms": ["leaf yellowing", "brown streak-like discoloration", "spreading to neighboring plants"],
+    "urgency": "high",
+    "growth_stage": "mid-season",
+    "acreage": 3.5,
+    "image_url": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Cassava_leaf.jpg"
+  },
+  {
+    "case_id": "cactus-cochineal-clear",
+    "title": "Cactus fig case: pest response approved with low-risk actions",
+    "crop": "cactus fig",
+    "location": "Tigray cactus fig recovery farm",
+    "symptoms": ["white cotton-like clusters", "localized patches", "visible cochineal scale signs"],
+    "urgency": "medium",
+    "growth_stage": "fruiting",
+    "acreage": 1.2,
+    "image_url": "https://upload.wikimedia.org/wikipedia/commons/3/3c/Dactylopius_coccus_on_Opuntia.jpg"
+  },
+  {
+    "case_id": "tomato-chemical-risk",
+    "title": "Tomato case: chemical treatment blocked pending confirmation",
+    "crop": "tomato",
+    "location": "Greenhouse block A",
+    "symptoms": ["brown spots", "yellow leaf margins", "possible concentric rings"],
+    "urgency": "medium",
+    "growth_stage": "vegetative",
+    "acreage": 0.8,
+    "image_url": "https://upload.wikimedia.org/wikipedia/commons/8/89/Tomato_Early_Blight.JPG"
+  }
+]
