@@ -1,7 +1,7 @@
 """
 app/router.py
 
-SymbioAI router:
+SymbioAI Track 1 router:
 - Deterministic zero-token interception for safe arithmetic and structural extraction.
 - Micro-prompted Fireworks fallback with tight max_tokens and reasoning suppression.
 - Strict answer canonicalization helpers for benchmark-style outputs.
@@ -10,7 +10,7 @@ SymbioAI router:
 Dependencies:
     openai
     pydantic
-    
+
 Environment variables:
     FIREWORKS_API_KEY                  Required for cloud fallback.
     FIREWORKS_BASE_URL                 Defaults to Fireworks OpenAI-compatible endpoint.
@@ -27,8 +27,7 @@ Environment variables:
 
 from __future__ import annotations
 
-import ast, asyncio, contextlib, hashlib, json, logging, math, os, re, 
-import subprocess, sys, tempfile, textwrap
+import ast, asyncio, contextlib, hashlib, json, logging, math, os, re, subprocess, sys, tempfile, textwrap
 from dataclasses import dataclass, field
 from enum import Enum
 from fractions import Fraction
@@ -39,6 +38,7 @@ from openai import AsyncOpenAI
 logger = logging.getLogger("symbioAI.router")
 
 # Task categories
+
 class TaskType(str, Enum):
     MATH = "math"
     SENTIMENT = "sentiment"
@@ -52,6 +52,7 @@ class TaskType(str, Enum):
     GENERAL = "general"
 
 # Data structures
+
 @dataclass(frozen=True)
 class ModelProfile:
     """Cloud model/runtime profile for a task type."""
@@ -81,6 +82,7 @@ class RouteResult:
 @dataclass
 class DeterministicHit:
     """A safe zero-token answer produced locally."""
+
     answer: str
     task_type: TaskType
     confidence: float
@@ -88,11 +90,12 @@ class DeterministicHit:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 # Model profiles and prompt profiles
+
 DEFAULT_FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
 
 DEFAULT_MODEL = os.getenv(
     "FIREWORKS_MODEL",
-    "accounts/fireworks/models/gemma2-9b-it",
+    "accounts/fireworks/models/llama-v3p1-8b-instruct",
 )
 
 DEFAULT_CHEAP_MODEL = os.getenv("FIREWORKS_MODEL_CHEAP", DEFAULT_MODEL)
@@ -206,7 +209,7 @@ def stable_prompt_hash(text: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 def strip_code_fences(text: str) -> str:
-    """Remove common markdown code fences while preserving code content."""
+    """Removing common markdown code fences while preserving code content."""
     if not text:
         return ""
     matches = _CODE_FENCE_RE.findall(text)
@@ -248,6 +251,7 @@ def normalize_output_text(text: Any) -> str:
     return s
 
 # Task extraction and categorization
+
 def extract_prompt(task: Any) -> str:
     """
     Extract useful prompt text from flexible task structures.
@@ -301,6 +305,7 @@ def explicit_task_type(task: Any) -> Optional[TaskType]:
     """Read task type hints if the benchmark supplies them."""
     if not isinstance(task, Mapping):
         return None
+
     raw = str(
         task.get("type")
         or task.get("category")
@@ -351,6 +356,7 @@ def infer_task_type(prompt: str, task: Any = None) -> TaskType:
     hinted = explicit_task_type(task)
     if hinted:
         return hinted
+
     p = compact_text(prompt, max_chars=3000)
     low = p.lower()
 
@@ -430,9 +436,17 @@ def _replace_math_words(text: str) -> str:
     s = text.lower()
 
     replacements = {
-        "multiplied by": "*", "times": "*", "x": "*",
-        "divided by": "/", "over": "/", "plus": "+", "added to": "+",
-        "minus": "-", "less": "-", "to the power of": "**", "raised to": "**",
+        "multiplied by": "*",
+        "times": "*",
+        "x": "*",
+        "divided by": "/",
+        "over": "/",
+        "plus": "+",
+        "added to": "+",
+        "minus": "-",
+        "less": "-",
+        "to the power of": "**",
+        "raised to": "**",
     }
 
     for phrase, op in replacements.items():
@@ -477,7 +491,7 @@ def _extract_arithmetic_expression(text: str) -> Optional[str]:
         if len(nums) >= 2:
             return "*".join(nums)
 
-    # Removing common command wrappers.
+    # Remove common command wrappers.
     low = re.sub(
         r"^(type:\s*\w+\s*)?(calculate|compute|evaluate|solve|what is|find the value of|question:)\s*",
         "",
@@ -620,7 +634,6 @@ def try_deterministic_math(prompt: str) -> Optional[DeterministicHit]:
     expr = _extract_arithmetic_expression(prompt)
     if not expr:
         return None
-
     try:
         result = safe_eval_arithmetic_expression(expr)
         answer = format_fraction_result(result, prompt)
@@ -663,11 +676,17 @@ def _json_list(items: Iterable[str]) -> str:
 def _extract_payload_after_marker(prompt: str) -> str:
     """
     Extract the text payload from task prompts.
+
     Tries common markers first, otherwise returns the whole prompt.
     """
     markers = (
-        "text:", "input:", "sentence:", "review:",
-        "document:", "content:", "extract from:",
+        "text:",
+        "input:",
+        "sentence:",
+        "review:",
+        "document:",
+        "content:",
+        "extract from:",
     )
     low = prompt.lower()
     for marker in markers:
@@ -717,22 +736,20 @@ def try_structural_extraction(prompt: str) -> Optional[DeterministicHit]:
 # Deterministic sentiment for obvious cases
 
 _POSITIVE_WORDS = {
-    "amazing", "awesome", "best", "excellent", "fantastic",
-    "good", "great", "happy", "love", "loved", "perfect",
-    "recommend", "satisfied", "wonderful", "delightful",
-    "brilliant", "positive",
+    "amazing", "awesome", "best", "excellent", "fantastic", "good",
+    "great", "happy", "love", "loved", "perfect", "recommend",
+    "satisfied", "wonderful", "delightful", "brilliant", "positive",
 }
 
 _NEGATIVE_WORDS = {
-    "awful", "bad", "broken", "disappointed", "hate", "hated", "horrible",
-    "poor", "refund", "sad", "terrible", "worst", "useless", "angry",
-    "negative", "buggy", "slow",
+    "awful", "bad", "broken", "disappointed", "hate", "hated",
+    "horrible", "poor", "refund", "sad", "terrible", "worst", 
+    "useless", "angry", "negative", "buggy", "slow",
 }
 
 def try_deterministic_sentiment(prompt: str) -> Optional[DeterministicHit]:
     """
     Conservative lexical sentiment.
-
     Only accepts high-margin obvious sentiment. Ambiguous language falls through
     to Fireworks.
     """
@@ -1002,7 +1019,6 @@ def build_micro_prompt(task_type: TaskType, prompt: str) -> str:
 class SymbioRouter:
     """
     symbioAI uncertainty-gated router.
-
     Core routing order:
         1. Exact normalized cache.
         2. Deterministic zero-token interceptors.
@@ -1271,7 +1287,6 @@ class SymbioRouter:
         )
 
 # Convenience singleton
-
 _router_singleton: Optional[SymbioRouter] = None
 
 def get_router() -> SymbioRouter:
@@ -1291,9 +1306,9 @@ async def route_tasks(tasks: Sequence[Any]) -> List[RouteResult]:
 
 __all__ = [
     "TaskType", "ModelProfile", "RouteResult", "DeterministicHit",
-    "SymbioRouter", "get_router","route_task", "route_tasks", 
-    "canonicalize_answer","extract_prompt", "infer_task_type", 
-    "try_deterministic_math", "try_structural_extraction", 
-    "try_deterministic_sentiment","safe_eval_arithmetic_expression", 
+    "SymbioRouter", "get_router", "route_task", "route_tasks",
+    "canonicalize_answer", "extract_prompt", "infer_task_type",
+    "try_deterministic_math", "try_structural_extraction",
+    "try_deterministic_sentiment", "safe_eval_arithmetic_expression",
     "run_sandboxed_python", "MODEL_PROFILES",
 ]
