@@ -1141,6 +1141,29 @@ class SymbioRouter:
 
         return None
 
+    def _fallback_without_cloud(self, prompt: str, task_type: TaskType, reason: str) -> RouteResult:
+        """
+        Last-resort fallback structure. Prevents server 500 crashes when 
+        on-demand inference limits are hit.
+        """
+        if task_type in (TaskType.NER, TaskType.STRUCTURAL_EXTRACTION):
+            answer = "[]"
+        elif task_type == TaskType.SENTIMENT:
+            answer = "neutral"
+        elif task_type == TaskType.MATH:
+            hit = self.try_deterministic(prompt, task_type)
+            answer = hit.answer if hit else "0"
+        else:
+            answer = ""
+
+        return RouteResult(
+            answer=canonicalize_answer(answer, task_type, prompt),
+            task_type=task_type,
+            source="fallback_error",
+            confidence=0.0,
+            metadata={"reason": reason},
+        )
+
     async def route(self, task: Any) -> RouteResult:
         """
         Route one task and return a canonicalized RouteResult.
