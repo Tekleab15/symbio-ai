@@ -1083,7 +1083,6 @@ class SymbioRouter:
 
     def _model_for(self, profile: ModelProfile) -> str:
         return os.getenv(profile.model_env, profile.default_model)
-
     def _cache_get(self, key: str) -> Optional[RouteResult]:
         if not self.enable_cache:
             return None
@@ -1266,33 +1265,119 @@ class SymbioRouter:
             or "unsupported parameter" in msg
             or "unknown parameter" in msg
         )
+        
+    def _fallback_model_candidates(self, primary_model: str) -> List[str]:
+        """Gemma 4-only Fireworks cascade. Strict mode."""
+        candidates: List[str] = []
 
-    def _fallback_without_cloud(self, prompt: str, task_type: TaskType, reason: str) -> RouteResult:
-        """
-        Last-resort fallback.
+        def clean_model(value: Optional[str]) -> Optional[str]:
+            if not value:
+                return None
+            return value.strip().strip('"').strip("'").strip()
 
-        This should rarely be used in scoring, but it prevents hard crashes and
-        keeps output structure valid.
-        """
-        if task_type in (TaskType.NER, TaskType.STRUCTURAL_EXTRACTION):
-            answer = "[]"
-        elif task_type == TaskType.SENTIMENT:
-            answer = "neutral"
-        elif task_type == TaskType.MATH:
-            # Try one final deterministic math pass.
-            hit = try_deterministic_math(prompt)
-            answer = hit.answer if hit else "0"
-        else:
-            answer = ""
+        def add(model: Optional[str]) -> None:
+            model = clean_model(model)
+            if model and model not in candidates:
+                candidates.append(model)
 
-        return RouteResult(
-            answer=canonicalize_answer(answer, task_type, prompt),
-            task_type=task_type,
-            source="fallback_error",
-            confidence=0.0,
-            metadata={"reason": reason},
-        )
+        add(primary_model)
 
+        for model in os.getenv("FIREWORKS_MODEL_FALLBACKS", "").split(","):
+            add(model)
+
+        add(os.getenv("FIREWORKS_MODEL_CHEAP"))
+        add(os.getenv("FIREWORKS_MODEL_FACTUAL"))
+        add(os.getenv("FIREWORKS_MODEL_CODE"))
+        add(os.getenv("FIREWORKS_MODEL_GEMMA"))
+
+        # Gemma 4 family fallbacks
+        add("accounts/fireworks/models/gemma-4-26b-a4b-it")
+        add("accounts/fireworks/models/gemma-4-31b-it")
+        add("accounts/fireworks/models/gemma-4-e4b")
+        
+        # Safe Serverless Gemma fallbacks just in case On-Demand fails
+        add("accounts/fireworks/models/gemma-2-27b-it")
+        add("accounts/fireworks/models/gemma-2-9b-it")
+
+        return candidates
+
+    def _model_for(self, profile: ModelProfile) -> str:
+        model = os.getenv(profile.model_env, profile.default_model)
+        return model.strip().strip('"').strip("'").strip()
+
+    async def _call_fireworks(self, prompt: str, task_type: TaskType) -> RouteResult:
+        profile = self._profile_for(task_type)
+        primary_model = self._model_for(profile)
+        user_prompt = build_micro_prompt(task_type, prompt)
+
+        last_error: Optional[Exception] = None
+
+        for model in self._fallback_model_candidates(primary_model):
+            base_payload: Dict[str, Any] = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": profile.system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": profile.temperature,
+                "top_p": profile.top_p,
+                "max_tokens": profile.max_tokens,
+            }
+
+            attempts: List[Tuple[str, Dict[str, Any]]] = []
+
+            if (
+                profile.reasoning_effort is not None
+                and os.getenv("SYMBIO_DISABLE_REASONING_EFFORT", "1").strip() != "1"
+            ):
+                attempts.append(("with_reasoning_effort", {"reasoning_effort": profile.reasoning_effort}))
+
+            attempts.append(("plain", {}))
+
+            for attempt_name, extra_body in attempts:
+                try:
+                    kwargs: Dict[str, Any] = dict(base_payload)
+                    if extra_body:
+                        kwargs["extra_body"] = extra_body
+
+                    response = await self.client.chat.completions.create(**kwargs)
+
+                    try:
+                        raw = response.choices[0].message.content or ""
+                    except Exception:
+                        raw = str(response)
+
+                    answer = canonicalize_answer(raw, task_type, prompt)
+
+                    return RouteResult(
+                        answer=answer,
+                        task_type=task_type,
+                        source="fireworks_gemma",
+                        confidence=0.75,
+                        model=model,
+                        raw_answer=raw,
+                        metadata={
+                            "profile": profile.name,
+                            "max_tokens": profile.max_tokens,
+                            "attempt": attempt_name,
+                            "gemma_only": True,
+                        },
+                    )
+
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning(
+                        "Gemma Fireworks attempt failed | model=%s | attempt=%s | error=%s",
+                        model,
+                        attempt_name,
+                        str(exc)[:200],
+                    )
+                    continue
+
+        if last_error is not None:
+            raise last_error
+
+        raise RuntimeError("No Gemma Fireworks model candidates configured.")
 # Convenience singleton
 _router_singleton: Optional[SymbioRouter] = None
 
