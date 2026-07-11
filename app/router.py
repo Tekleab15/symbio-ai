@@ -52,7 +52,6 @@ class TaskType(str, Enum):
     GENERAL = "general"
 
 # Data structures
-
 @dataclass(frozen=True)
 class ModelProfile:
     """Cloud model/runtime profile for a task type."""
@@ -1036,6 +1035,14 @@ class SymbioRouter:
         timeout_seconds: Optional[float] = None,
         max_concurrency: Optional[int] = None,
     ) -> None:
+        # Authenticate
+        self.api_key = api_key or os.getenv("FIREWORKS_API_KEY")
+        self.base_url = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1")
+        
+        # (Gemma 4 Family) Model names can be overridden via environment variables.
+        self.cheap_model = os.getenv("FIREWORKS_MODEL_CHEAP", "accounts/fireworks/models/gemma-4-e4b")
+        self.factual_model = os.getenv("FIREWORKS_MODEL_FACTUAL", "accounts/fireworks/models/gemma-4-26b-a4b-it")
+        self.code_model = os.getenv("FIREWORKS_MODEL_CODE", "accounts/fireworks/models/gemma-4-31b-it")
         self.api_key = api_key or os.getenv("FIREWORKS_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.base_url = base_url or os.getenv("FIREWORKS_BASE_URL", DEFAULT_FIREWORKS_BASE_URL)
 
