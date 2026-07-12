@@ -836,30 +836,34 @@ def try_structural_extraction(prompt: str) -> Optional[DeterministicHit]:
 
 # Deterministic sentiment for obvious mixed/single-polarity cases
 
+# ---------------------------------------------------------------------------
+# Deterministic sentiment for obvious mixed/single-polarity cases
+# ---------------------------------------------------------------------------
+
 _POSITIVE_WORDS = {
     "amazing", "awesome", "best", "excellent", "fantastic", "flawless",
     "good", "great", "happy", "love", "loved", "perfect", "perfectly",
     "recommend", "resolved", "satisfied", "support", "worked", "works",
-    "wonderful",
+    "wonderful", "spectacular", "pleasant", "helpful", "praise", "praises"
 }
 
 _NEGATIVE_WORDS = {
-    "awful", "bad", "broken", "damaged", "dented", "disappointed", "hate", "hated", "horrible",
-    "late", "missing", "poor", "refund", "slow", "terrible", "worst", "useless",
+    "awful", "bad", "broken", "damaged", "dented", "disappointed",
+    "hate", "hated", "horrible", "late", "missing", "poor", "refund",
+    "slow", "terrible", "worst", "useless", "detested", "ruined", "criticizes"
 }
 
 def _sentiment_reason(label: str, pos_hits: List[str], neg_hits: List[str]) -> str:
+    neg_str = ", ".join(neg_hits[:3]) if neg_hits else "negative issues"
+    pos_str = ", ".join(pos_hits[:3]) if pos_hits else "positive elements"
+    
     if label == "Mixed":
-        return (
-            "Mixed: It includes negative issues such as "
-            f"{', '.join(neg_hits[:3])}, but also positive outcomes such as {', '.join(pos_hits[:3])}."
-        )
+        return f"Mixed: It includes negative issues such as {neg_str}, but also positive outcomes such as {pos_str}."
     if label == "Positive":
-        return f"Positive: The review emphasizes positive aspects such as {', '.join(pos_hits[:3])}."
+        return f"Positive: The review emphasizes positive aspects such as {pos_str}."
     if label == "Negative":
-        return f"Negative: The review emphasizes negative aspects such as {', '.join(neg_hits[:3])}."
+        return f"Negative: The review emphasizes negative aspects such as {neg_str}."
     return "Neutral: The review does not strongly favor either a positive or negative interpretation."
-
 def try_deterministic_sentiment(prompt: str) -> Optional[DeterministicHit]:
     low = prompt.lower()
     if not any(k in low for k in ("sentiment", "classify", "label", "review", "tweet")):
