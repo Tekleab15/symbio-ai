@@ -1911,3 +1911,209 @@ def _enforce_summary_constraints(answer: str, prompt: str) -> str:
         return " ".join(sentences)
 
     return s
+
+# ---------------------------------------------------------------------------
+# Final inventory-math hardening override
+# ---------------------------------------------------------------------------
+# Late-bound override: replaces SymbioRouter.try_deterministic at import time.
+# This prevents structural extraction from hijacking quantitative word problems
+# and returning [] for math tasks.
+
+def _symbio_fraction(value: str) -> Fraction:
+    return Fraction(value.replace(",", "").replace("$", "").strip())
+
+
+def _symbio_format_fraction(value: Fraction) -> str:
+    if value.denominator == 1:
+        return str(value.numerator)
+
+    # Prefer concise decimal for non-integer inventory outcomes.
+    return f"{float(value):.10f}".rstrip("0").rstrip(".")
+
+
+def _symbio_inventory_event_math(prompt: str) -> Optional[DeterministicHit]:
+    """
+    Generic inventory / warehouse / fulfillment event math.
+
+    Handles prompts like:
+    - initially has 4,500 laptops
+    - liquidates/sells/unloads/ships 24% of inventory
+    - receives/restocks/adds 1200 items
+    - unloads/sells/ships/removes 350 items
+
+    This is arithmetic parsing, not a hardcoded answer table.
+    """
+    text = compact_text(prompt, max_chars=2000).lower().replace(",", "")
+
+    inventory_context = any(
+        k in text
+        for k in (
+            "stock",
+            "inventory",
+            "warehouse",
+            "fulfillment",
+            "fulfilment",
+            "center",
+            "centre",
+            "units",
+            "unit",
+            "laptops",
+            "items",
+            "devices",
+            "products",
+            "packages",
+            "boxes",
+            "phase",
+            "q1",
+            "q2",
+            "q3",
+            "left",
+            "remain",
+            "remaining",
+        )
+    )
+
+    if not inventory_context:
+        return None
+
+    start = re.search(
+        r"(?:starts?\s+with|initially\s+(?:has|had|contains)|begins?\s+with|has)\s+"
+        r"([0-9]+(?:\.[0-9]+)?)\s*"
+        r"(?:units?|items?|laptops?|devices?|products?|packages?|boxes?|inventory)?",
+        text,
+    )
+
+    if not start:
+        return None
+
+    current = _symbio_fraction(start.group(1))
+    events: List[Tuple[int, str, Fraction]] = []
+
+    # Percentage removals.
+    for m in re.finditer(
+        r"\b(?:sells?|sold|liquidates?|liquidated|unloads?|unloaded|ships?|shipped|"
+        r"removes?|removed|disposes?|disposed|uses?|used)\s+"
+        r"([0-9]+(?:\.[0-9]+)?)\s*%",
+        text,
+    ):
+        events.append((m.start(), "pct_out", _symbio_fraction(m.group(1))))
+
+    # Absolute additions.
+    for m in re.finditer(
+        r"\b(?:receives?|received|restocks?|restocked|adds?|added|gets?|got|imports?|imported)\s+"
+        r"([0-9]+(?:\.[0-9]+)?)\s*"
+        r"(?:units?|items?|laptops?|devices?|products?|packages?|boxes?|inventory)?",
+        text,
+    ):
+        events.append((m.start(), "add", _symbio_fraction(m.group(1))))
+
+    # Absolute removals.
+    for m in re.finditer(
+        r"\b(?:sells?|sold|liquidates?|liquidated|unloads?|unloaded|ships?|shipped|"
+        r"removes?|removed|disposes?|disposed)\s+"
+        r"([0-9]+(?:\.[0-9]+)?)\s+"
+        r"(?:units?|items?|laptops?|devices?|products?|packages?|boxes?)",
+        text,
+    ):
+        events.append((m.start(), "abs_out", _symbio_fraction(m.group(1))))
+
+    if not events:
+        return None
+
+    events.sort(key=lambda x: x[0])
+
+    for _, kind, value in events:
+        if kind == "pct_out":
+            current -= current * value / 100
+        elif kind == "add":
+            current += value
+        elif kind == "abs_out":
+            current -= value
+
+    return DeterministicHit(
+        answer=_symbio_format_fraction(current),
+        task_type=TaskType.MATH,
+        confidence=0.95,
+        reason="generic_inventory_event_math_v2",
+        metadata={"events": len(events)},
+    )
+
+
+def _symbio_prompt_is_mathish(prompt: str) -> bool:
+    low = prompt.lower()
+    return (
+        looks_like_math_prompt(prompt)
+        or _symbio_inventory_event_math(prompt) is not None
+        or bool(
+            re.search(
+                r"\b(how many|how much|left|remain|remaining|inventory|stock|fulfillment|"
+                r"fulfilment|warehouse|phase|liquidates?|receives?|unloads?|restocks?)\b",
+                low,
+            )
+        )
+    )
+
+
+def _symbio_try_deterministic_hardened(self: SymbioRouter, prompt: str, task_type: TaskType) -> Optional[DeterministicHit]:
+    """
+    Hardened deterministic layer.
+
+    Critical rule:
+    - Math-like prompts must never fall through to structural extraction, because
+      structural extraction may return [] and look like a deterministic success.
+    """
+    inventory_hit = _symbio_inventory_event_math(prompt)
+    if inventory_hit:
+        return inventory_hit
+
+    mathish = _symbio_prompt_is_mathish(prompt)
+
+    # Structural extraction only for actual structural tasks, never math-like tasks.
+    if task_type == TaskType.STRUCTURAL_EXTRACTION and not mathish:
+        hit = try_structural_extraction(prompt)
+        if hit:
+            return hit
+
+    if task_type == TaskType.SENTIMENT:
+        hit = try_deterministic_sentiment(prompt)
+        if hit:
+            return hit
+
+    if task_type == TaskType.MATH or mathish:
+        hit = try_deterministic_math(prompt)
+        if hit:
+            return hit
+
+        # Important: do NOT return structural [] for math-like prompts.
+        return None
+
+    if task_type in (TaskType.FACTUAL_QA, TaskType.GENERAL):
+        hit = try_deterministic_factual_qa(prompt)
+        if hit:
+            return hit
+
+    # Second structural pass only for explicit email/URL/phone extraction.
+    low = prompt.lower()
+    explicitly_structural = any(
+        k in low
+        for k in (
+            "extract email",
+            "extract emails",
+            "extract url",
+            "extract urls",
+            "extract links",
+            "phone number",
+            "phone numbers",
+            "extract phone",
+        )
+    )
+
+    if explicitly_structural and not mathish:
+        hit = try_structural_extraction(prompt)
+        if hit:
+            return hit
+
+    return None
+
+
+SymbioRouter.try_deterministic = _symbio_try_deterministic_hardened
