@@ -338,7 +338,7 @@ def explicit_task_type(task: Any) -> Optional[TaskType]:
 
 def looks_like_math_prompt(text: str) -> bool:
     s = compact_text(text).lower()
-        math_keywords = (
+    math_keywords = (
         "calculate", "compute","evaluate","solve",
         "what is", "how many", "how much", "find the value",
         "sum of", "product of", "difference between", "quotient of",
