@@ -1695,6 +1695,8 @@ class SymbioRouter:
         raise RuntimeError("No Fireworks model candidates configured.")
 
     def _fallback_without_cloud(self, prompt: str, task_type: TaskType, reason: str) -> RouteResult:
+        source_name = "fallback_error"
+        
         if task_type in (TaskType.NER, TaskType.STRUCTURAL_EXTRACTION):
             answer = "[]"
         elif task_type == TaskType.SENTIMENT:
@@ -1702,20 +1704,22 @@ class SymbioRouter:
         elif task_type == TaskType.MATH:
             hit = try_deterministic_math(prompt)
             answer = hit.answer if hit else "0"
+            source_name = "deterministic_repair" if hit else "fallback_error"
         elif task_type == TaskType.SUMMARIZATION:
             answer = _enforce_summary_constraints("", prompt)
+            source_name = "deterministic_repair"
         elif task_type in (TaskType.CODE_GENERATION, TaskType.CODE_DEBUGGING):
             answer = "pass"
         else:
             answer = ""
+
         return RouteResult(
             answer=canonicalize_answer(answer, task_type, prompt),
             task_type=task_type,
-            source="deterministic_repair",
+            source=source_name,
             confidence=0.0,
             metadata={"reason": reason},
         )
-
 # Convenience singleton
 _router_singleton: Optional[SymbioRouter] = None
 
