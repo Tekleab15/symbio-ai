@@ -1672,7 +1672,7 @@ class SymbioRouter:
         return RouteResult(
             answer=canonicalize_answer(answer, task_type, prompt),
             task_type=task_type,
-            source="fallback_error",
+            source="deterministic_repair",
             confidence=0.0,
             metadata={"reason": reason},
         )
