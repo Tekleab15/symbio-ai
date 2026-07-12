@@ -23,4 +23,5 @@ frontend/.vite/
 # OS/editor
 .DS_Store
 .vscode/
-.idea/
+.idea/.env.local
+*.env
