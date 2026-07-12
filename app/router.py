@@ -15,7 +15,18 @@ Design goals:
 
 from __future__ import annotations
 
-import ast, asyncio, contextlib, hashlib, json, logging, math, os, re, subprocess, sys, tempfile
+import ast
+import asyncio
+import contextlib
+import hashlib
+import json
+import logging
+import math
+import os
+import re
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from fractions import Fraction
@@ -56,6 +67,7 @@ class ModelProfile:
         "and do not omit required facts."
     )
 
+
 @dataclass
 class RouteResult:
     answer: str
@@ -65,6 +77,7 @@ class RouteResult:
     model: Optional[str] = None
     raw_answer: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class DeterministicHit:
@@ -176,6 +189,7 @@ MODEL_PROFILES: Dict[TaskType, ModelProfile] = {
     ),
 }
 
+
 # General text utilities
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -194,9 +208,11 @@ def compact_text(text: Any, max_chars: int = 8000) -> str:
     s = _WHITESPACE_RE.sub(" ", s).strip()
     return s[:max_chars].rstrip() if len(s) > max_chars else s
 
+
 def stable_prompt_hash(text: str) -> str:
     normalized = compact_text(text).lower()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
 
 def strip_code_fences(text: str) -> str:
     if not text:
@@ -205,6 +221,7 @@ def strip_code_fences(text: str) -> str:
     if matches:
         return "\n\n".join(m.strip() for m in matches if m.strip()).strip()
     return text.strip()
+
 
 def first_json_like(text: str) -> Optional[str]:
     if not text:
@@ -216,6 +233,7 @@ def first_json_like(text: str) -> Optional[str]:
     if object_match:
         return object_match.group(0).strip()
     return None
+
 
 def remove_common_preambles(text: str) -> str:
     s = text.strip()
@@ -239,11 +257,7 @@ def normalize_output_text(text: Any) -> str:
 
     return s
 
-
-# ---------------------------------------------------------------------------
 # Task extraction and categorization
-# ---------------------------------------------------------------------------
-
 
 def extract_prompt(task: Any) -> str:
     if isinstance(task, str):
@@ -339,15 +353,27 @@ def explicit_task_type(task: Any) -> Optional[TaskType]:
 def looks_like_math_prompt(text: str) -> bool:
     s = compact_text(text).lower()
     math_keywords = (
-        "calculate", "compute","evaluate","solve",
-        "what is", "how many", "how much", "find the value",
-        "sum of", "product of", "difference between", "quotient of",
-        "average of", "percent", "%", "cost", "units", "stock", "inventory",
-        "warehouse", "fulfillment", "fulfilment", "center", "centre", "initially",
-        "starts with", "begins with", "left", "remain", "remaining", "liquidates",
-        "liquidate", "receives", "receive", "restocks", "restock", "unloads","unload",
-        "ships", "ship", "laptops", "items", "devices", "products", "phase", "q1", "q2",
-        "q3", "recipe", "cookies",
+        "calculate",
+        "compute",
+        "evaluate",
+        "solve",
+        "what is",
+        "how many",
+        "how much",
+        "find the value",
+        "sum of",
+        "product of",
+        "difference between",
+        "quotient of",
+        "average of",
+        "percent",
+        "%",
+        "cost",
+        "units",
+        "stock",
+        "warehouse",
+        "recipe",
+        "cookies",
     )
     has_operator = bool(re.search(r"\d\s*[\+\-\*/%^]\s*\d", s))
     has_numbers = len(re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", s)) >= 1
@@ -398,8 +424,10 @@ def infer_task_type(prompt: str, task: Any = None) -> TaskType:
 _ALLOWED_BINOPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)
 _ALLOWED_UNARYOPS = (ast.UAdd, ast.USub)
 
+
 class UnsafeExpression(ValueError):
     pass
+
 
 def _replace_math_words(text: str) -> str:
     s = text.lower()
@@ -420,12 +448,15 @@ def _replace_math_words(text: str) -> str:
     s = re.sub(r"\bcubed\b", "**3", s)
     return s
 
+
 def _number_from_text(raw: str) -> Fraction:
     clean = raw.replace(",", "").replace("$", "").strip()
     return Fraction(clean)
 
+
 def _format_money(value: Fraction) -> str:
     return f"${float(value):.2f}"
+
 
 def _format_number(value: Fraction) -> str:
     if value.denominator == 1:
@@ -438,7 +469,6 @@ def _format_number(value: Fraction) -> str:
         return f"{float(value):.12f}".rstrip("0").rstrip(".")
     return f"{value.numerator}/{value.denominator}"
 
-# Safe arithmetic and generic word-math
 
 def try_word_math(prompt: str) -> Optional[DeterministicHit]:
     """
@@ -449,65 +479,28 @@ def try_word_math(prompt: str) -> Optional[DeterministicHit]:
     """
     text = compact_text(prompt, max_chars=1200).lower().replace(",", "")
 
-    inventory_context = any(
-        k in text
-        for k in (
-            "stock", "inventory", "warehouse", "fulfillment", "fulfilment",
-            "center", "centre", "units", "laptops", "items", "devices", "products",
-        )
-    )
+    if "stock" in text or "units" in text or "warehouse" in text:
+        start = re.search(r"(?:starts?\s+with|initially\s+has|begins?\s+with)\s+([0-9]+(?:\.[0-9]+)?)\s+units?", text)
+        percent_sale = re.search(r"sells?\s+([0-9]+(?:\.[0-9]+)?)\s*%", text)
+        restock = re.search(r"(?:restocks?|adds?|receives?)\s+([0-9]+(?:\.[0-9]+)?)\s+units?", text)
+        unit_sales = re.findall(r"sells?\s+([0-9]+(?:\.[0-9]+)?)\s+units?", text)
 
-    if inventory_context:
-        start = re.search(
-            r"(?:starts?\s+with|initially\s+has|begins?\s+with|has)\s+([0-9]+(?:\.[0-9]+)?)\s+"
-            r"(?:units?|items?|laptops?|devices?|products?|inventory)?",
-            text,
-        )
+        if start and percent_sale and restock:
+            start_units = _number_from_text(start.group(1))
+            pct = _number_from_text(percent_sale.group(1)) / 100
+            sold_pct = start_units * pct
+            remain = start_units - sold_pct
+            remain += _number_from_text(restock.group(1))
+            if unit_sales:
+                remain -= _number_from_text(unit_sales[-1])
+            return DeterministicHit(
+                answer=_format_number(remain),
+                task_type=TaskType.MATH,
+                confidence=0.92,
+                reason="generic_inventory_word_math",
+                metadata={"template": "inventory_percent_restock_sale"},
+            )
 
-        if start:
-            current = _number_from_text(start.group(1))
-            event_patterns: List[Tuple[int, str, Fraction]] = []
-
-            for m in re.finditer(
-                r"\b(?:sells?|liquidates?|unloads?|ships?|removes?|disposes?|uses?)\s+"
-                r"([0-9]+(?:\.[0-9]+)?)\s*%", text
-            ):
-                event_patterns.append((m.start(), "pct_out", _number_from_text(m.group(1))))
-
-            # Additions: receives/restocks/adds 1200 laptops
-            for m in re.finditer(
-                r"\b(?:receives?|restocks?|adds?|gets?)\s+([0-9]+(?:\.[0-9]+)?)\s+"
-                r"(?:units?|items?|laptops?|devices?|products?|inventory)?", text
-            ):
-                event_patterns.append((m.start(), "add", _number_from_text(m.group(1))))
-
-            # Absolute removals: unloads/sells/ships/removes 350 laptops
-            for m in re.finditer(
-                r"\b(?:sells?|liquidates?|unloads?|ships?|removes?|disposes?)\s+([0-9]+(?:\.[0-9]+)?)\s+"
-                r"(?:units?|items?|laptops?|devices?|products?)", text
-            ):
-                event_patterns.append((m.start(), "abs_out", _number_from_text(m.group(1))))
-
-            event_patterns.sort(key=lambda x: x[0])
-
-            # Need at least one meaningful event; otherwise do not risk a local answer.
-            if event_patterns:
-                for _, kind, value in event_patterns:
-                    if kind == "pct_out":
-                        current -= current * value / 100
-                    elif kind == "add":
-                        current += value
-                    elif kind == "abs_out":
-                        current -= value
-
-                return DeterministicHit(
-                    answer=_format_number(current),
-                    task_type=TaskType.MATH,
-                    confidence=0.94,
-                    reason="generic_inventory_event_math",
-                    metadata={"events": len(event_patterns)},
-                )
-    
     if "recipe" in text or "cookies" in text or "cup" in text:
         base = re.search(
             r"requires?\s+([0-9]+(?:/[0-9]+)?(?:\.[0-9]+)?)\s+cups?\s+of\s+\w+\s+for\s+([0-9]+)\s+\w+",
@@ -535,42 +528,7 @@ def try_word_math(prompt: str) -> Optional[DeterministicHit]:
 
     return None
 
-# Deterministic structural extraction
 
-def try_structural_extraction(prompt: str) -> Optional[DeterministicHit]:
-    low = prompt.lower()
-    payload = _extract_payload_after_marker(prompt)
-    extractors: List[Tuple[str, Callable[[str], List[str]]]] = []
-
-    if "email" in low:
-        extractors.append(("email", lambda s: _EMAIL_RE.findall(s)))
-    if "url" in low or "link" in low or "website" in low:
-        extractors.append(("url", lambda s: _URL_RE.findall(s)))
-    if "phone" in low or "telephone" in low:
-        extractors.append(("phone", lambda s: _PHONE_RE.findall(s)))
-    if "date" in low and "named entit" not in low:
-        extractors.append(("date", lambda s: _DATE_RE.findall(s)))
-    if "money" in low or "price" in low or "amount" in low or "currency" in low:
-        extractors.append(("money", lambda s: _MONEY_RE.findall(s)))
-
-    if not extractors:
-        return None
-
-    found: List[str] = []
-    kinds: List[str] = []
-    for kind, extractor in extractors:
-        values = extractor(payload)
-        if values:
-            kinds.append(kind)
-            found.extend(values)
-
-    return DeterministicHit(
-        answer=_json_list(found),
-        task_type=TaskType.STRUCTURAL_EXTRACTION,
-        confidence=0.95 if found else 0.80,
-        reason="regex_structural_extraction",
-        metadata={"kinds": kinds},
-    )
 def _extract_arithmetic_expression(text: str) -> Optional[str]:
     original = compact_text(text, max_chars=1000)
     low = _replace_math_words(original).replace(",", "")
@@ -617,6 +575,7 @@ def _extract_arithmetic_expression(text: str) -> Optional[str]:
             return cand.strip()
     return None
 
+
 def _safe_fraction_from_constant(value: Any) -> Fraction:
     if isinstance(value, bool):
         raise UnsafeExpression("booleans are not numeric constants")
@@ -627,6 +586,7 @@ def _safe_fraction_from_constant(value: Any) -> Fraction:
             raise UnsafeExpression("non-finite float")
         return Fraction(str(value))
     raise UnsafeExpression(f"unsupported constant: {type(value).__name__}")
+
 
 def _eval_ast_node(node: ast.AST, depth: int = 0) -> Fraction:
     if depth > 32:
@@ -672,6 +632,7 @@ def _eval_ast_node(node: ast.AST, depth: int = 0) -> Fraction:
             return left ** exponent
     raise UnsafeExpression(f"disallowed expression node: {type(node).__name__}")
 
+
 def safe_eval_arithmetic_expression(expr: str) -> Fraction:
     expr = expr.strip()
     if not expr:
@@ -682,6 +643,7 @@ def safe_eval_arithmetic_expression(expr: str) -> Fraction:
         raise UnsafeExpression("illegal characters in expression")
     parsed = ast.parse(expr, mode="eval")
     return _eval_ast_node(parsed)
+
 
 def format_fraction_result(value: Fraction, prompt: str = "") -> str:
     low = prompt.lower()
@@ -748,6 +710,7 @@ _MONEY_RE = re.compile(
     re.IGNORECASE,
 )
 
+
 def _json_list(items: Iterable[str]) -> str:
     cleaned: List[str] = []
     seen = set()
@@ -791,16 +754,6 @@ def _extract_payload_after_marker(prompt: str) -> str:
 
 def try_structural_extraction(prompt: str) -> Optional[DeterministicHit]:
     low = prompt.lower()
-    # A second structural pass catches explicit emails/URLs even if category inference was general.
-    # Do not allow structural extraction to hijack quantitative word problems.
-    low = prompt.lower()
-    mathish = looks_like_math_prompt(prompt) or bool(
-        re.search(r"\b(how many|how much|left|remain|remaining|inventory|stock|fulfillment|warehouse|phase)\b", low)
-    )
-    if not mathish:
-        hit = try_structural_extraction(prompt)
-        if hit:
-            return hit
     payload = _extract_payload_after_marker(prompt)
     extractors: List[Tuple[str, Callable[[str], List[str]]]] = []
 
@@ -836,34 +789,63 @@ def try_structural_extraction(prompt: str) -> Optional[DeterministicHit]:
 
 # Deterministic sentiment for obvious mixed/single-polarity cases
 
-# ---------------------------------------------------------------------------
-# Deterministic sentiment for obvious mixed/single-polarity cases
-# ---------------------------------------------------------------------------
-
 _POSITIVE_WORDS = {
-    "amazing", "awesome", "best", "excellent", "fantastic", "flawless",
-    "good", "great", "happy", "love", "loved", "perfect", "perfectly",
-    "recommend", "resolved", "satisfied", "support", "worked", "works",
-    "wonderful", "spectacular", "pleasant", "helpful", "praise", "praises"
+    "amazing",
+    "awesome",
+    "best",
+    "excellent",
+    "fantastic",
+    "flawless",
+    "good",
+    "great",
+    "happy",
+    "love",
+    "loved",
+    "perfect",
+    "perfectly",
+    "recommend",
+    "resolved",
+    "satisfied",
+    "support",
+    "worked",
+    "works",
+    "wonderful",
 }
 
 _NEGATIVE_WORDS = {
-    "awful", "bad", "broken", "damaged", "dented", "disappointed",
-    "hate", "hated", "horrible", "late", "missing", "poor", "refund",
-    "slow", "terrible", "worst", "useless", "detested", "ruined", "criticizes"
+    "awful",
+    "bad",
+    "broken",
+    "damaged",
+    "dented",
+    "disappointed",
+    "hate",
+    "hated",
+    "horrible",
+    "late",
+    "missing",
+    "poor",
+    "refund",
+    "slow",
+    "terrible",
+    "worst",
+    "useless",
 }
 
+
 def _sentiment_reason(label: str, pos_hits: List[str], neg_hits: List[str]) -> str:
-    neg_str = ", ".join(neg_hits[:3]) if neg_hits else "negative issues"
-    pos_str = ", ".join(pos_hits[:3]) if pos_hits else "positive elements"
-    
     if label == "Mixed":
-        return f"Mixed: It includes negative issues such as {neg_str}, but also positive outcomes such as {pos_str}."
+        return (
+            "Mixed: It includes negative issues such as "
+            f"{', '.join(neg_hits[:3])}, but also positive outcomes such as {', '.join(pos_hits[:3])}."
+        )
     if label == "Positive":
-        return f"Positive: The review emphasizes positive aspects such as {pos_str}."
+        return f"Positive: The review emphasizes positive aspects such as {', '.join(pos_hits[:3])}."
     if label == "Negative":
-        return f"Negative: The review emphasizes negative aspects such as {neg_str}."
+        return f"Negative: The review emphasizes negative aspects such as {', '.join(neg_hits[:3])}."
     return "Neutral: The review does not strongly favor either a positive or negative interpretation."
+
+
 def try_deterministic_sentiment(prompt: str) -> Optional[DeterministicHit]:
     low = prompt.lower()
     if not any(k in low for k in ("sentiment", "classify", "label", "review", "tweet")):
@@ -914,6 +896,7 @@ _DANGEROUS_CODE_PATTERNS = re.compile(
     r"pickle|marshal|compile\s*\(|globals\s*\(|locals\s*\(|input\s*\()",
     re.IGNORECASE,
 )
+
 
 def run_sandboxed_python(code: str, timeout_seconds: float = 2.0) -> Tuple[bool, str, str]:
     clean = strip_code_fences(code).strip()
@@ -978,38 +961,13 @@ def _split_sentences(text: str) -> List[str]:
     pieces = re.split(r"(?<=[.!?])\s+", text.strip())
     return [p.strip() for p in pieces if p.strip()]
 
+
 def _word_trim(text: str, max_words: int) -> str:
-    """
-    Trim to max_words while preserving a complete-looking bullet.
+    words = text.strip().split()
+    if len(words) <= max_words:
+        return text.strip()
+    return " ".join(words[:max_words]).rstrip(".,;:") + "."
 
-    This is used for strict summary formats. It removes dangling endings such as
-    "as a", "of the", "and", etc., which hidden judges often penalize.
-    """
-    cleaned = text.strip()
-    if not cleaned:
-        return ""
-
-    words = cleaned.split()
-
-    if max_words and len(words) > max_words:
-        words = words[:max_words]
-
-    dangling = {
-        "as", "and", "or", "of", "for", "to", "with", "in", "on",
-        "the", "a", "an", "by", "around", "rather", "than", "from"
-    }
-
-    while words:
-        tail = re.sub(r"[^A-Za-z-]", "", words[-1]).lower()
-        if tail in dangling:
-            words.pop()
-        else:
-            break
-
-    out = " ".join(words).strip()
-    out = out.rstrip(".,;:")
-
-    return f"{out}." if out else ""
 
 def _extract_exact_sentence_count(prompt: str) -> Optional[int]:
     low = prompt.lower()
@@ -1021,6 +979,7 @@ def _extract_exact_sentence_count(prompt: str) -> Optional[int]:
     if m:
         return word_numbers[m.group(1)]
     return None
+
 
 def _extract_exact_bullet_count(prompt: str) -> Optional[int]:
     low = prompt.lower()
@@ -1041,10 +1000,12 @@ def _extract_bullet_word_limit(prompt: str) -> Optional[int]:
         return int(m.group(1))
     return None
 
+
 def _extract_summary_passage(prompt: str) -> str:
     if ":" in prompt:
         return prompt.split(":", 1)[1].strip().strip("'\"")
     return prompt.strip().strip("'\"")
+
 
 def _extractive_summary_points(prompt: str, n: int) -> List[str]:
     passage = _extract_summary_passage(prompt)
@@ -1074,6 +1035,7 @@ def _extractive_summary_points(prompt: str, n: int) -> List[str]:
     while len(selected) < n:
         selected.append("")
     return selected[:n]
+
 
 def _enforce_summary_constraints(answer: str, prompt: str) -> str:
     s = answer.strip()
@@ -1124,6 +1086,7 @@ def _enforce_summary_constraints(answer: str, prompt: str) -> str:
 
     return s
 
+
 def _repair_labeled_ner(answer: str, prompt: str) -> str:
     if not answer:
         answer = ""
@@ -1155,6 +1118,7 @@ def _repair_labeled_ner(answer: str, prompt: str) -> str:
     repaired = re.sub(r"\blocation\b", "LOCATION", repaired, flags=re.IGNORECASE)
     repaired = re.sub(r"\bdate\b", "DATE", repaired, flags=re.IGNORECASE)
     return repaired.strip()
+
 
 def canonicalize_answer(answer: Any, task_type: TaskType | str = TaskType.GENERAL, prompt: str = "") -> str:
     try:
@@ -1220,6 +1184,7 @@ def canonicalize_answer(answer: Any, task_type: TaskType | str = TaskType.GENERA
 
     return s.strip()
 
+
 def _valid_summary_answer(answer: str, prompt: str) -> bool:
     bullet_count = _extract_exact_bullet_count(prompt)
     word_limit = _extract_bullet_word_limit(prompt)
@@ -1239,6 +1204,7 @@ def _valid_summary_answer(answer: str, prompt: str) -> bool:
         return len(_split_sentences(answer)) == sentence_count
     return bool(answer.strip())
 
+
 def _valid_ner_answer(answer: str, prompt: str) -> bool:
     if not answer.strip():
         return False
@@ -1254,6 +1220,7 @@ def _valid_ner_answer(answer: str, prompt: str) -> bool:
         if requested_labels and not re.search(r"\((PERSON|ORGANIZATION|LOCATION|DATE)\)", part):
             return False
     return True
+
 
 def _valid_factual_answer(answer: str, prompt: str) -> bool:
     s = answer.strip()
@@ -1271,6 +1238,7 @@ def _valid_factual_answer(answer: str, prompt: str) -> bool:
     if "ram" in low_p and "rom" in low_p:
         return all(k in low_s for k in ("volatile", "non-volatile")) and any(k in low_s for k in ("firmware", "bios"))
     return True
+
 
 def _passes_quality_gate(answer: str, task_type: TaskType, prompt: str) -> bool:
     if not answer.strip():
@@ -1456,19 +1424,12 @@ class SymbioRouter:
             if hit:
                 return hit
 
-        # A second structural pass catches explicit emails/URLs even if category inference was general.
-        # Do not allow structural extraction to hijack quantitative word problems.
-        low = prompt.lower()
-        mathish = looks_like_math_prompt(prompt) or bool(
-            re.search(r"\b(how many|how much|left|remain|remaining|inventory|stock|fulfillment|warehouse|phase)\b", low)
-        )
-
-        if not mathish:
-            hit = try_structural_extraction(prompt)
-            if hit:
-                return hit
+        hit = try_structural_extraction(prompt)
+        if hit:
+            return hit
 
         return None
+
     async def route(self, task: Any) -> RouteResult:
         prompt = extract_prompt(task)
         task_type = infer_task_type(prompt, task)
@@ -1695,8 +1656,6 @@ class SymbioRouter:
         raise RuntimeError("No Fireworks model candidates configured.")
 
     def _fallback_without_cloud(self, prompt: str, task_type: TaskType, reason: str) -> RouteResult:
-        source_name = "fallback_error"
-        
         if task_type in (TaskType.NER, TaskType.STRUCTURAL_EXTRACTION):
             answer = "[]"
         elif task_type == TaskType.SENTIMENT:
@@ -1704,23 +1663,22 @@ class SymbioRouter:
         elif task_type == TaskType.MATH:
             hit = try_deterministic_math(prompt)
             answer = hit.answer if hit else "0"
-            source_name = "deterministic_repair" if hit else "fallback_error"
         elif task_type == TaskType.SUMMARIZATION:
             answer = _enforce_summary_constraints("", prompt)
-            source_name = "deterministic_repair"
         elif task_type in (TaskType.CODE_GENERATION, TaskType.CODE_DEBUGGING):
             answer = "pass"
         else:
             answer = ""
-
         return RouteResult(
             answer=canonicalize_answer(answer, task_type, prompt),
             task_type=task_type,
-            source=source_name,
+            source="fallback_error",
             confidence=0.0,
             metadata={"reason": reason},
         )
+
 # Convenience singleton
+
 _router_singleton: Optional[SymbioRouter] = None
 
 def get_router() -> SymbioRouter:
@@ -1729,18 +1687,32 @@ def get_router() -> SymbioRouter:
         _router_singleton = SymbioRouter()
     return _router_singleton
 
+
 async def route_task(task: Any) -> RouteResult:
     return await get_router().route(task)
+
 
 async def route_tasks(tasks: Sequence[Any]) -> List[RouteResult]:
     return await get_router().route_batch(tasks)
 
+
 __all__ = [
-    "TaskType", "ModelProfile", "RouteResult", "DeterministicHit",
-    "SymbioRouter", "get_router", "route_task", "route_tasks",
-    "canonicalize_answer", "extract_prompt", "infer_task_type",
-    "try_deterministic_math", "try_structural_extraction",
-    "try_deterministic_sentiment", "try_deterministic_factual_qa",
-    "safe_eval_arithmetic_expression", "run_sandboxed_python",
+    "TaskType",
+    "ModelProfile",
+    "RouteResult",
+    "DeterministicHit",
+    "SymbioRouter",
+    "get_router",
+    "route_task",
+    "route_tasks",
+    "canonicalize_answer",
+    "extract_prompt",
+    "infer_task_type",
+    "try_deterministic_math",
+    "try_structural_extraction",
+    "try_deterministic_sentiment",
+    "try_deterministic_factual_qa",
+    "safe_eval_arithmetic_expression",
+    "run_sandboxed_python",
     "MODEL_PROFILES",
 ]
